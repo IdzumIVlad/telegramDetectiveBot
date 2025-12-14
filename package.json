@@ -1,18 +1,17 @@
 {
-  "name": "detectivegame",
+  "name": "detective-telegram-bot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "description": "Detective game Telegram bot",
   "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
   "dependencies": {
-    "dotenv": "^17.2.3",
-    "openai": "^6.10.0",
-    "telegraf": "^4.16.3"
+    "dotenv": "^16.4.5",
+    "googleapis": "^168.0.0",
+    "openai": "^4.28.0",
+    "telegraf": "^4.16.2"
   }
 }
