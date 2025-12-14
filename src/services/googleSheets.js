@@ -1,9 +1,10 @@
 import { google } from 'googleapis'
 import {
-    GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    GOOGLE_PRIVATE_KEY,
-    GOOGLE_SHEET_ID
+    GOOGLE_SHEET_ID,
+    GOOGLE_CREDENTIALS_PATH
 } from '../config.js'
+import fs from 'fs'
+import path from 'path'
 
 export class GoogleSheetsService {
     constructor() {
@@ -16,24 +17,28 @@ export class GoogleSheetsService {
      * Initialize connection to Google Sheets
      */
     async connect() {
-        if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY || !GOOGLE_SHEET_ID) {
-            console.warn('⚠️ Google Sheets credentials missing. Service disabled.')
+        if (!GOOGLE_SHEET_ID) {
+            console.warn('⚠️ Google Sheets ID missing. Service disabled.')
+            return
+        }
+
+        // Resolve path relative to project root (where package.json is)
+        const keyFilePath = path.resolve(process.cwd(), GOOGLE_CREDENTIALS_PATH)
+
+        if (!fs.existsSync(keyFilePath)) {
+            console.warn(`⚠️ Credentials file not found at ${keyFilePath}. Service disabled.`)
             return
         }
 
         try {
-            const auth = new google.auth.JWT(
-                GOOGLE_SERVICE_ACCOUNT_EMAIL,
-                null,
-                // Replace literal \n with actual newlines if they are escaped in env
-                GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-                ['https://www.googleapis.com/auth/spreadsheets']
-            )
+            const auth = new google.auth.GoogleAuth({
+                keyFile: keyFilePath,
+                scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+            })
 
-            await auth.authorize()
-            this.client = auth
-            this.sheets = google.sheets({ version: 'v4', auth })
-            console.log('✅ Google Sheets connected')
+            this.client = await auth.getClient()
+            this.sheets = google.sheets({ version: 'v4', auth: this.client })
+            console.log('✅ Google Sheets connected (via credentials.json)')
         } catch (error) {
             console.error('❌ Google Sheets connection error:', error)
             throw error
@@ -61,7 +66,8 @@ export class GoogleSheetsService {
                 },
             })
         } catch (error) {
-            console.error(`❌ Failed to append row to ${range}:`, error)
+            console.error(`❌ Failed to append row to ${range}:`, error.message)
+            throw error // Propagate error so caller handles it
         }
     }
 }

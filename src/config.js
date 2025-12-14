@@ -17,12 +17,11 @@ export function assertEnv() {
     process.exit(1)
   }
   // Optional: check for google sheets credentials if you want to enforce them on startup
-  // For now, we'll just log a warning if they are missing, or you can enforce them.
   if (!process.env.GOOGLE_SHEET_ID) {
-    console.warn('⚠️ GOOGLE_SHEET_ID is missing in .env (Google Sheets integration disabled)')
+    console.warn('⚠️ GOOGLE_SHEET_ID is missing. Google Sheets integration will not work.')
   }
 }
 
-export const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-export const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY
 export const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID
+// We are now using credentials.json file, so we don't need to export invalid env vars
+export const GOOGLE_CREDENTIALS_PATH = 'credentials.json'
