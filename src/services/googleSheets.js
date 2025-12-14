@@ -46,6 +46,74 @@ export class GoogleSheetsService {
     }
 
     /**
+   * Ensure a sheet exists with specific headers
+   * @param {string} title - Sheet title (e.g. "GameLogs")
+   * @param {string[]} headers - Array of header strings
+   */
+    async ensureSheet(title, headers) {
+        if (!this.sheets) return
+
+        try {
+            const meta = await this.sheets.spreadsheets.get({
+                spreadsheetId: this.sheetId
+            })
+
+            const sheetExists = meta.data.sheets.some(s => s.properties.title === title)
+
+            if (!sheetExists) {
+                // Create sheet
+                await this.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: this.sheetId,
+                    requestBody: {
+                        requests: [{
+                            addSheet: {
+                                properties: { title }
+                            }
+                        }]
+                    }
+                })
+
+                // Add headers
+                await this.appendRow(title, headers)
+                console.log(`✅ Sheet "${title}" created with headers.`)
+            }
+        } catch (error) {
+            console.error(`❌ Failed to ensure sheet "${title}":`, error.message)
+            // Don't throw here to avoid breaking the flow if we just failed to check/create
+        }
+    }
+
+    /**
+   * Log game event (START, WIN, LOSS, etc)
+   * @param {Object} params
+   * @param {string} params.eventName - "START", "WIN", "LOSS"
+   * @param {string} params.userString - User formatted name/link
+   * @param {number|string} params.userId - Telegram ID
+   * @param {string} params.caseId - Case ID
+   * @param {number} [params.score] - Score 0-10 (optional for START)
+   * @param {number} [params.questionsAsked] - Number of questions (optional for START)
+   */
+    async logGameEvent({ eventName, userString, userId, caseId, score = '', questionsAsked = '' }) {
+        const SHEET_NAME = 'GameLogs'
+        const HEADERS = ['Time', 'User', 'ID', 'Case', 'Event', 'Score', 'Questions']
+
+        await this.ensureSheet(SHEET_NAME, HEADERS)
+
+        const now = new Date().toISOString()
+        const row = [
+            now,
+            userString,
+            userId.toString(),
+            caseId,
+            eventName,
+            score,
+            questionsAsked
+        ]
+
+        await this.appendRow(SHEET_NAME, row)
+    }
+
+    /**
      * Append a row to the sheet
      * @param {string} range - e.g. "Sheet1!A:A" or just "Sheet1"
      * @param {Array<string|number>} values - Array of values for the row
@@ -67,7 +135,7 @@ export class GoogleSheetsService {
             })
         } catch (error) {
             console.error(`❌ Failed to append row to ${range}:`, error.message)
-            throw error // Propagate error so caller handles it
+            // throw error // Propagate error so caller handles it (commented out for production safety)
         }
     }
 }

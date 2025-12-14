@@ -1,12 +1,13 @@
 import { BTN, kbMain, kbMore, kbYesNo, kbCaseSelection } from '../bot/ui/keyboards.js'
 import { helpText, solveHowToText, restartConfirmText, moreQuestionsAskText, solveConfirmText } from '../bot/ui/texts.js'
-import { safeReply, safeTyping } from '../bot/safe.js'
-import { getCaseById, pickActiveCaseRandom, CASES } from './cases/index.js'
+import { getCaseById, CASES } from './cases/index.js'
 import { looksLikeMultiQuestion } from './multiQuestion.js'
+import { safeReply, safeTyping } from '../bot/safe.js'
 import { newSuspectProfile } from './temperament.js'
 import { computeScore10 } from './scoring.js'
 import { askSuspectLLM } from '../llm/suspect.js'
 import { checkGuessLLM } from '../llm/judge.js'
+import { googleSheetsService } from '../services/googleSheets.js'
 
 function maxQuestions(s) {
   return s.limitBase + (s.extraUnlocked ? s.extraLimit : 0)
@@ -96,6 +97,15 @@ export async function handleText(ctx, { sessionStore, openai, model }) {
 
       await safeReply(ctx, selectedCase.rulesShort, kbMain())
       await safeReply(ctx, selectedCase.scenario, kbMain())
+
+      // Log Start
+      console.log('📝 Logging START to sheets...')
+      googleSheetsService.logGameEvent({
+        eventName: 'START',
+        userString: `@${ctx.from.username || 'anon'} (${ctx.from.first_name || ''})`,
+        userId: ctx.from.id,
+        caseId: s.caseId,
+      })
       return
     }
 
@@ -187,6 +197,10 @@ export async function handleText(ctx, { sessionStore, openai, model }) {
 
         s.stage = 'FINISHED'
         await safeReply(ctx, `${winLabel}\n${meta}\n\n${verdict.feedback}\n\n${c.solution}`, kbMain())
+
+        // Log Win
+        console.log('📝 Logging WIN to sheets...')
+        googleSheetsService.logGameEvent({ ...logData, eventName: 'WIN' })
         return
       }
 
@@ -196,6 +210,10 @@ export async function handleText(ctx, { sessionStore, openai, model }) {
         `❌ Не сошлось.\nТочность: ${verdict.closeness}%\nВопросов: ${s.asked}\nБаллы: ${score}/10\n\n${verdict.feedback}\n\n${c.solution}\n\nХочешь сыграть снова? /start`,
         kbMain()
       )
+
+      // Log Loss
+      console.log('📝 Logging LOSS to sheets...')
+      googleSheetsService.logGameEvent({ ...logData, eventName: 'LOSS' })
       return
     }
 
