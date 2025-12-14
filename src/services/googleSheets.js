@@ -138,6 +138,78 @@ export class GoogleSheetsService {
             // throw error // Propagate error so caller handles it (commented out for production safety)
         }
     }
+    /**
+   * Read all data from a sheet
+   * @param {string} title
+   * @returns {Promise<Array<Array<string>>>} Rows
+   */
+    async readSheet(title) {
+        if (!this.sheets) return []
+        try {
+            const res = await this.sheets.spreadsheets.values.get({
+                spreadsheetId: this.sheetId,
+                range: title
+            })
+            return res.data.values || []
+        } catch (e) {
+            console.error(`Error reading sheet ${title}:`, e.message)
+            return []
+        }
+    }
+
+    /**
+     * Write data to a specific sheet (overwriting specific range or whole sheet logic if extended)
+     * For migration, we usually clear and write.
+     */
+    async writeSheet(title, values) {
+        if (!this.sheets) return
+
+        // Clear sheet content first (except maybe headers if we want to be safe, but for migration we overwrite)
+        // For simplicity, we just overwrite from A1. If sheet doesn't exist, ensureSheet should be called first.
+
+        try {
+            await this.sheets.spreadsheets.values.update({
+                spreadsheetId: this.sheetId,
+                range: `${title}!A1`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values }
+            })
+        } catch (e) {
+            console.error(`Error writing sheet ${title}:`, e)
+            throw e
+        }
+    }
+
+    async createSheetIfNotExists(title) {
+        if (!this.sheets) return
+        try {
+            const meta = await this.sheets.spreadsheets.get({ spreadsheetId: this.sheetId })
+            const sheetExists = meta.data.sheets.some(s => s.properties.title === title)
+            if (!sheetExists) {
+                await this.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: this.sheetId,
+                    requestBody: {
+                        requests: [{ addSheet: { properties: { title } } }]
+                    }
+                })
+                console.log(`Created sheet: ${title}`)
+            }
+        } catch (e) {
+            console.error(`Error creating sheet ${title}:`, e)
+        }
+    }
+
+    async clearSheet(title) {
+        if (!this.sheets) return
+        try {
+            await this.sheets.spreadsheets.values.clear({
+                spreadsheetId: this.sheetId,
+                range: title
+            })
+        } catch (e) {
+            // ignore if sheet didn't exist
+        }
+    }
 }
 
 export const googleSheetsService = new GoogleSheetsService()

@@ -1,9 +1,10 @@
 import { Telegraf } from 'telegraf'
-import { assertEnv, BOT_TOKEN, MODEL } from './config.js'
+import { assertEnv, BOT_TOKEN, MODEL, ADMIN_ID } from './config.js'
 import { createOpenAIClient } from './llm/openaiClient.js'
 import * as sessionStore from './game/sessionStore.memory.js'
 import { startGame, handleText } from './game/engine.js'
 import { googleSheetsService } from './services/googleSheets.js'
+import { caseManager } from './game/caseManager.js'
 import { registerCommands } from './bot/handlers/commands.js'
 import { registerStart } from './bot/handlers/start.js'
 import { registerTextHandler } from './bot/handlers/text.js'
@@ -17,7 +18,9 @@ process.on('uncaughtException', (e) => console.error('UNCAUGHT:', e))
 assertEnv()
 
 // Initialize services
-googleSheetsService.connect().catch(e => console.error('Sheet init error:', e))
+googleSheetsService.connect()
+  .then(() => caseManager.loadFromCloud())
+  .catch(e => console.error('Services init error:', e))
 
 const bot = new Telegraf(BOT_TOKEN)
 const openai = createOpenAIClient()
@@ -27,6 +30,7 @@ const deps = {
   sessionStore,
   openai,
   model: MODEL,
+  caseManager // Dependency injection
 }
 
 // =====================

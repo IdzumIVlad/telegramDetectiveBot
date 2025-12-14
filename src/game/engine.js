@@ -1,6 +1,6 @@
 import { BTN, kbMain, kbMore, kbYesNo, kbCaseSelection } from '../bot/ui/keyboards.js'
 import { helpText, solveHowToText, restartConfirmText, moreQuestionsAskText, solveConfirmText } from '../bot/ui/texts.js'
-import { getCaseById, CASES } from './cases/index.js'
+// Removed static CASES import
 import { looksLikeMultiQuestion } from './multiQuestion.js'
 import { safeReply, safeTyping } from '../bot/safe.js'
 import { newSuspectProfile } from './temperament.js'
@@ -16,7 +16,7 @@ function questionsLeft(s) {
   return Math.max(0, maxQuestions(s) - s.asked)
 }
 
-export async function startGame(ctx, { sessionStore }) {
+export async function startGame(ctx, { sessionStore, caseManager }) {
   const chatId = ctx.chat?.id
   if (!chatId) return
   const s = sessionStore.getSession(chatId)
@@ -33,10 +33,30 @@ export async function startGame(ctx, { sessionStore }) {
   s.extraUnlocked = false
   s.history = []
 
-  await safeReply(ctx, 'Какой кейс будем расследовать?', kbCaseSelection())
+  // Dynamic Case Selection: We can list titles or use buttons.
+  // Assuming kbCaseSelection now needs to be dynamic or we just list them if kb is static.
+  // For now, let's just list available cases.
+  const activeCases = caseManager.getAllActive()
+  if (activeCases.length === 0) {
+    await safeReply(ctx, '⚠️ Нет активных дел. Обратитесь к администратору.')
+    return
+  }
+
+  // Create dynamic keyboard if possible, or just text list if we stick to static buttons (CASE_1, CASE_2)
+  // Our static buttons are "Дело №1" and "Дело №2". We map them to the first 2 active cases.
+
+  let msg = 'Какой кейс будем расследовать?\n\n'
+  activeCases.forEach((c, i) => {
+    // Assuming BTN.CASE_1 maps to index 0, CASE_2 to index 1
+    const btnLabel = i === 0 ? BTN.CASE_1 : (i === 1 ? BTN.CASE_2 : `Дело #${i + 1}`)
+    msg += `${btnLabel}: ${c.title}\n`
+  })
+
+  await safeReply(ctx, msg, kbCaseSelection())
 }
 
-export async function handleText(ctx, { sessionStore, openai, model }) {
+export async function handleText(ctx, deps) {
+  const { sessionStore, openai, model, caseManager } = deps
   const chatId = ctx.chat?.id
   if (!chatId) return
 
@@ -46,7 +66,7 @@ export async function handleText(ctx, { sessionStore, openai, model }) {
   try {
     // ---- Auto recover (restart node) or freshly initialized
     if (s.stage === 'IDLE') {
-      await startGame(ctx, { sessionStore })
+      await startGame(ctx, deps)
       return
     }
 
@@ -58,7 +78,7 @@ export async function handleText(ctx, { sessionStore, openai, model }) {
     if (text === BTN.RESTART) {
       if (s.stage === 'CASE_SELECTION') {
         // No need to confirm if we haven't started
-        await startGame(ctx, { sessionStore })
+        await startGame(ctx, deps)
         return
       }
       s.prevStage = s.stage // save to restore if NO
@@ -79,9 +99,12 @@ export async function handleText(ctx, { sessionStore, openai, model }) {
 
     // ---- CASE SELECTION
     if (s.stage === 'CASE_SELECTION') {
+      const activeCases = caseManager.getAllActive()
       let selectedCase = null
-      if (text === BTN.CASE_1) selectedCase = CASES[0]
-      if (text === BTN.CASE_2) selectedCase = CASES[1]
+
+      // Map buttons to array indices
+      if (text === BTN.CASE_1 && activeCases[0]) selectedCase = activeCases[0]
+      if (text === BTN.CASE_2 && activeCases[1]) selectedCase = activeCases[1]
 
       if (!selectedCase) {
         await safeReply(ctx, 'Пожалуйста, выбери дело кнопкой снизу.', kbCaseSelection())
@@ -173,7 +196,13 @@ export async function handleText(ctx, { sessionStore, openai, model }) {
       return
     }
 
-    const c = getCaseById(s.caseId) || CASES[0]
+    // Get case from manager
+    const c = caseManager.getCaseById(s.caseId)
+    if (!c) {
+      await safeReply(ctx, '⚠️ Ошибка: Данные дела не найдены (возможно, оно было удалено). Начните заново: /start')
+      s.stage = 'IDLE'
+      return
+    }
 
     // ---- SOLVING
     if (s.stage === 'SOLVING') {
