@@ -4,7 +4,9 @@ import { safeReply } from '../safe.js'
 import { ADMIN_ID } from '../../config.js'
 import { caseManager } from '../../game/caseManager.js'
 
-export function registerCommands(bot, { sessionStore, startGame }) {
+export function registerCommands(bot, deps) {
+  const { sessionStore, startGame } = deps
+
   bot.command('help', async (ctx) => {
     await safeReply(ctx, helpText(), kbMain())
   })
@@ -13,8 +15,15 @@ export function registerCommands(bot, { sessionStore, startGame }) {
     const chatId = ctx.chat?.id
     if (!chatId) return
     const s = sessionStore.getSession(chatId)
-    s.awaitingRestartConfirm = true
-    s.awaitingExtraConfirm = false
+
+    // If selecting case, just restart (re-list cases)
+    if (s.stage === 'CASE_SELECTION') {
+      await startGame(ctx, deps)
+      return
+    }
+
+    s.prevStage = s.stage
+    s.stage = 'CONFIRM_RESTART'
     await safeReply(ctx, restartConfirmText(), kbYesNo())
   })
 
