@@ -258,7 +258,12 @@ export async function handleText(ctx, deps) {
 
         // Log Win
         console.log('📝 Logging WIN to sheets...')
-        googleSheetsService.logGameEvent({ ...logData, eventName: 'WIN' })
+        googleSheetsService.logGameEvent({
+          ...logData,
+          eventName: 'WIN',
+          score,
+          questionsAsked: s.asked
+        })
         return
       }
 
@@ -269,7 +274,12 @@ export async function handleText(ctx, deps) {
       )
 
       // Log Loss
-      googleSheetsService.logGameEvent({ ...logData, eventName: 'LOSS' })
+      googleSheetsService.logGameEvent({
+        ...logData,
+        eventName: 'LOSS',
+        score,
+        questionsAsked: s.asked
+      })
       return
     }
 
@@ -318,6 +328,15 @@ export async function handleText(ctx, deps) {
       }
 
       await ctx.reply(answer, kbMain)
+
+      // Log Q&A
+      googleSheetsService.logQuestion({
+        userString: `@${ctx.username}`,
+        userId: ctx.userId,
+        caseId: s.caseId,
+        question: text,
+        answer: answer
+      }).catch(e => console.error('❌ Log question failed:', e.message))
 
       // после 10 — спросить про +5
       if (!s.extraUnlocked && s.asked >= s.limitBase) {
