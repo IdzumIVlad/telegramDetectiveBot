@@ -1,6 +1,5 @@
 import { Client, GatewayIntentBits, Events } from 'discord.js'
 import { DiscordContext } from '../game/platform/discord.js'
-// We will access engine via deps passed in init
 
 export const initDiscord = async (token, deps) => {
     const { handleText, startGame } = deps
@@ -34,14 +33,7 @@ export const initDiscord = async (token, deps) => {
     client.on(Events.InteractionCreate, async interaction => {
         // Button clicks
         if (interaction.isButton()) {
-            // We need to pass this to handleText, but 'text' getter in DiscordContext
-            // will return customId (which is the UI_KEY).
-            // engine compares `text === L[KEY]` -> '🕵️ Разгадать'
-
-            // Wait, DiscordContext.text logic I wrote:
-            // if (this.ctx.customId) { const label = UI_LABELS[customId]; return label || customId }
-            // So it returns the LABEL ('🕵️ Разгадать'), which matches what engine expects.
-
+            // DiscordContext handles mapping customId (UI_KEY) -> Label
             const ctx = new DiscordContext(interaction, client)
             await handleText(ctx)
         }

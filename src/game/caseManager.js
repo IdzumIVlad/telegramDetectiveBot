@@ -13,14 +13,6 @@ class CaseManager {
     async loadFromCloud() {
         console.log('☁️ Loading cases from Google Sheets...')
 
-        // We need a helper to read all rows. Since googleSheetsService currently only has append/write,
-        // we need to add a 'readSheet' method there first. 
-        // Assuming we will add it, or we can access the client directly if we expose it, 
-        // but better to add 'readSheet' to the service.
-
-        // TEMPORARY: I will assume the service has 'readSheet' returning Array<Array<string>> (rows)
-        // If not, we will add it in the next step.
-
         try {
             const [rowsCases, rowsSuspects, rowsTriggers, rowsPrompts] = await Promise.all([
                 googleSheetsService.readSheet('Config_Cases'),
