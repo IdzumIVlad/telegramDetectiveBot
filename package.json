@@ -9,6 +9,7 @@
     "dev": "node src/index.js"
   },
   "dependencies": {
+    "discord.js": "^14.25.1",
     "dotenv": "^16.4.5",
     "googleapis": "^168.0.0",
     "openai": "^4.28.0",

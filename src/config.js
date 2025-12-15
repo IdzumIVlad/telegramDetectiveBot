@@ -5,6 +5,7 @@ dotenv.config()
 // Config / env
 // =====================
 export const BOT_TOKEN = process.env.BOT_TOKEN
+export const DISCORD_TOKEN = process.env.DISCORD_TOKEN
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 export const MODEL = process.env.MODEL || 'gpt-4o'
 
@@ -17,17 +18,16 @@ export const GOOGLE_CREDENTIALS_PATH = 'credentials.json'
 export const ADMIN_ID = 234840579
 
 export function assertEnv() {
-  if (!BOT_TOKEN) {
-    console.error('❌ BOT_TOKEN is missing in .env')
+  if (!BOT_TOKEN && !DISCORD_TOKEN) {
+    console.error('❌ Neither BOT_TOKEN nor DISCORD_TOKEN is present in .env')
     process.exit(1)
   }
+
+  if (BOT_TOKEN) console.log('✅ Telegram Token found')
+  if (DISCORD_TOKEN) console.log('✅ Discord Token found')
+
   if (!OPENAI_API_KEY) {
     console.error('❌ OPENAI_API_KEY is missing in .env')
     process.exit(1)
   }
-  // Optional: check for google sheets credentials
-  if (!process.env.GOOGLE_SHEET_ID) {
-    console.warn('⚠️ GOOGLE_SHEET_ID is missing. Google Sheets integration will not work.')
-  }
 }
-

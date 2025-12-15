@@ -22,10 +22,11 @@ class CaseManager {
         // If not, we will add it in the next step.
 
         try {
-            const [rowsCases, rowsSuspects, rowsTriggers] = await Promise.all([
+            const [rowsCases, rowsSuspects, rowsTriggers, rowsPrompts] = await Promise.all([
                 googleSheetsService.readSheet('Config_Cases'),
                 googleSheetsService.readSheet('Config_Suspects'),
-                googleSheetsService.readSheet('Config_Triggers')
+                googleSheetsService.readSheet('Config_Triggers'),
+                googleSheetsService.readSheet('Config_Prompts')
             ])
 
             if (!rowsCases || rowsCases.length < 2) throw new Error('Cases sheet empty or missing headers')
@@ -33,6 +34,7 @@ class CaseManager {
             const parsedCases = this._parseCases(rowsCases)
             const parsedSuspects = this._parseSuspects(rowsSuspects)
             const parsedTriggers = this._parseTriggers(rowsTriggers)
+            const parsedPrompts = this._parsePrompts(rowsPrompts)
 
             // Assemble
             for (const c of parsedCases) {
@@ -54,10 +56,21 @@ class CaseManager {
                 } else {
                     console.warn(`⚠️ Case ${c.id} has no suspect configured.`)
                 }
+
+                // Find prompt override
+                // Logic: Look for specific case_id, OR fallback to 'default' if we want global override from sheet
+                // But typically user wants per-case or default.
+                // Let's look for specific case prompt first.
+                const promptRow = parsedPrompts.find(p => p.case_id === c.id)
+                if (promptRow) {
+                    c.promptTemplate = promptRow.template
+                }
             }
 
             this.cases = parsedCases
             this.isLoaded = true
+            this.prompts = parsedPrompts // Store raw prompts too if needed for debugging
+
             console.log(`✅ Loaded ${this.cases.length} cases from cloud. Active: ${this.cases.filter(c => c.isActive).length}`)
             return true
 
@@ -114,6 +127,15 @@ class CaseManager {
             keywords: (r[1] || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
             reveal: r[2]
         })).filter(t => t.case_id)
+    }
+
+    _parsePrompts(rows) {
+        // Headers: case_id, template
+        if (!rows || rows.length < 2) return []
+        return rows.slice(1).map(r => ({
+            case_id: r[0],
+            template: r[1]
+        })).filter(p => p.case_id && p.template)
     }
 }
 
