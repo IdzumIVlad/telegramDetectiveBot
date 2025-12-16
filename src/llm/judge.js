@@ -7,14 +7,14 @@ function safeParseJsonFromText(raw) {
   // 1) прямой JSON
   try {
     return JSON.parse(t)
-  } catch {}
+  } catch { }
 
   // 2) попытка вытащить первый {...}
   const m = t.match(/\{[\s\S]*\}/)
   if (m) {
     try {
       return JSON.parse(m[0])
-    } catch {}
+    } catch { }
   }
   return null
 }
@@ -29,7 +29,9 @@ export async function checkGuessLLM({ openai, model, caseData, guess }) {
     '',
     'Правила:',
     '- closeness 0..100',
-    '- is_correct = true если closeness >= 75',
+    '- is_correct = true если closeness >= 65',
+    '- ВАЖНО: Если игрок верно назвал ПРЕСТУПНИКА и СПОСОБ (как совершено), ставь минимум 80 баллов, даже если упущены детали (время, номер двери).',
+    '- Мелкие детали (минуты, номера) влияют только на получение идеального счета (90-100).',
     '- feedback 1–3 предложения',
     '- если is_correct=false — не раскрывай полностью истинное решение',
   ].join('\n')
@@ -57,7 +59,7 @@ export async function checkGuessLLM({ openai, model, caseData, guess }) {
   }
 
   const closeness = Math.max(0, Math.min(100, Number(j.closeness) || 0))
-  const is_correct = !!j.is_correct || closeness >= 75
+  const is_correct = !!j.is_correct || closeness >= 65
   const feedback = String(j.feedback || '').slice(0, 600)
   return { closeness, is_correct, feedback }
 }
