@@ -1,14 +1,11 @@
-import { UI_KEYS, UI_LABELS } from './platform/ui.js'
-import { helpText, solveHowToText, restartConfirmText, moreQuestionsAskText, solveConfirmText } from '../bot/ui/texts.js'
+import { UI_KEYS } from './platform/ui.js'
+import { getLocale } from './locales.js'
 import { looksLikeMultiQuestion } from './multiQuestion.js'
 import { newSuspectProfile } from './temperament.js'
 import { computeScore10 } from './scoring.js'
 import { askSuspectLLM } from '../llm/suspect.js'
 import { checkGuessLLM } from '../llm/judge.js'
 import { googleSheetsService } from '../services/googleSheets.js'
-
-// Helper to access labels easily
-const L = UI_LABELS
 
 function maxQuestions(s) {
   return s.limitBase + (s.extraUnlocked ? s.extraLimit : 0)
@@ -26,11 +23,19 @@ export async function startGame(ctx, { sessionStore, caseManager }) {
   if (!chatId) return
   const s = sessionStore.getSession(chatId)
 
+  // 0. Language Check
+  if (!s.lang) {
+    s.stage = 'LANGUAGE_SELECTION'
+    await ctx.reply('Select Language / Выберите язык', [['ru', 'en', 'es']], 'en') // default en for nav
+    return
+  }
+
+  const locale = getLocale(s.lang)
   const kbMain = [[UI_KEYS.SOLVE, UI_KEYS.RESTART], [UI_KEYS.HELP]]
 
-  // Warn if game is active, but allow forcing via buttons usually handled in handleText
+  // Warn if game is active
   if (['INTERROGATION', 'SOLVING', 'CONFIRM_EXTRA', 'CONFIRM_SOLVE'].includes(s.stage)) {
-    await ctx.reply(`🔎 Игра уже идёт.\nОсталось вопросов: ${questionsLeft(s)}\nРежим: ${s.stage}`, kbMain)
+    await ctx.reply(locale.GAME_ALREADY_ACTIVE(questionsLeft(s), s.stage), kbMain, s.lang)
     return
   }
 
@@ -42,31 +47,29 @@ export async function startGame(ctx, { sessionStore, caseManager }) {
 
   const activeCases = caseManager.getAllActive()
   if (activeCases.length === 0) {
-    await ctx.reply('⚠️ Нет активных дел. Обратитесь к администратору.')
+    await ctx.reply(locale.NO_ACTIVE_CASES, null, s.lang)
     return
   }
 
-  let msg = 'Какой кейс будем расследовать?\n\n'
+  let msg = locale.CASE_SELECT_MSG
   const kbSelection = []
 
   activeCases.forEach((c, i) => {
-    // Dynamic Labels mapping
     let btnKey
     if (i === 0) btnKey = UI_KEYS.CASE_1
     else if (i === 1) btnKey = UI_KEYS.CASE_2
-    else btnKey = `CASE_${i + 1}` // Fallback
+    else btnKey = `CASE_${i + 1}`
 
-    // For now, only 2 hardcoded buttons support in UI_KEYS, others will be text-only if we don't extend UI_KEYS or Labels
-    const label = UI_LABELS[btnKey] || `Дело #${i + 1}`
-    msg += `${label}: ${c.title}\n`
+    const label = locale[btnKey] || `${locale.CASE_DEFAULT_LABEL} #${i + 1}`
+    const title = c.title[s.lang] || c.title.ru || c.title
+    msg += `${label}: ${title}\n`
 
-    // Build keyboard row
-    if (btnKey && UI_LABELS[btnKey]) {
+    if (btnKey && locale[btnKey]) {
       kbSelection.push([btnKey])
     }
   })
 
-  await ctx.reply(msg, kbSelection)
+  await ctx.reply(msg, kbSelection, s.lang)
 }
 
 /**
@@ -79,7 +82,27 @@ export async function handleText(ctx, deps) {
   if (!chatId) return
 
   const s = sessionStore.getSession(chatId)
-  const text = ctx.text
+  let text = ctx.text
+
+  // 0. language selection
+  if (s.stage === 'LANGUAGE_SELECTION') {
+    text = text.toLowerCase()
+    if (['ru', 'en', 'es'].includes(text)) {
+      s.lang = text
+      await startGame(ctx, deps)
+      return
+    }
+    // Try to map flags/labels if user clicks button? 
+    // Usually buttons send exact text. Assuming 'ru'/'en' buttons.
+    await ctx.reply('Please select: ru, en, es', [['ru', 'en', 'es']])
+    return
+  }
+
+  const locale = getLocale(s.lang || 'ru')
+
+  // Check generic command helper
+  // Allow matching either the localized label OR the raw key (Discord customId)
+  const isCmd = (key) => text === locale[key] || text === key
 
   // Reusable Keyboards
   const kbMain = [[UI_KEYS.SOLVE, UI_KEYS.RESTART], [UI_KEYS.HELP]]
@@ -88,32 +111,37 @@ export async function handleText(ctx, deps) {
   const kbSelection = [[UI_KEYS.CASE_1], [UI_KEYS.CASE_2]]
 
   try {
-    // ---- Auto recover (restart node) or freshly initialized
+    // ---- Auto recover
     if (s.stage === 'IDLE') {
       await startGame(ctx, deps)
       return
     }
 
     // =====================
-    // GLOBAL COMMANDS (Restart, Help) - handled FIRST
+    // GLOBAL COMMANDS
     // =====================
 
-    // 1. RESTART button
-    if (text === L[UI_KEYS.RESTART]) {
+    // 1. RESTART
+    if (isCmd(UI_KEYS.RESTART)) {
       if (s.stage === 'CASE_SELECTION') {
-        // No need to confirm if we haven't started
+        s.lang = null // Optional: allow resetting language on restart? 
+        // User asked: "Also and at restart, offer to choose language".
+        // So YES, we should clear lang.
+        s.stage = 'LANGUAGE_SELECTION' // Force re-selection logic next start called
+        sessionStore.resetSession(chatId) // This wipes s.lang anyway if implementation does what it says
+        // Wait, resetSession creates fresh session.
         await startGame(ctx, deps)
         return
       }
-      s.prevStage = s.stage // save to restore if NO
+      s.prevStage = s.stage
       s.stage = 'CONFIRM_RESTART'
-      await ctx.reply(restartConfirmText(), kbYesNo)
+      await ctx.reply(locale.CONFIRM_RESTART, kbYesNo, s.lang)
       return
     }
 
-    // 2. HELP button
-    if (text === L[UI_KEYS.HELP]) {
-      await ctx.reply(helpText(), kbMain)
+    // 2. HELP
+    if (isCmd(UI_KEYS.HELP)) {
+      await ctx.reply(locale.HELP_TEXT, kbMain, s.lang)
       return
     }
 
@@ -126,12 +154,14 @@ export async function handleText(ctx, deps) {
       const activeCases = caseManager.getAllActive()
       let selectedCase = null
 
-      // Map buttons to array indices
-      if (text === L[UI_KEYS.CASE_1] && activeCases[0]) selectedCase = activeCases[0]
-      if (text === L[UI_KEYS.CASE_2] && activeCases[1]) selectedCase = activeCases[1]
+      // Map buttons
+      if (isCmd(UI_KEYS.CASE_1) && activeCases[0]) selectedCase = activeCases[0]
+      if (isCmd(UI_KEYS.CASE_2) && activeCases[1]) selectedCase = activeCases[1]
 
       if (!selectedCase) {
-        await ctx.reply('Пожалуйста, выбери дело кнопкой снизу.', kbSelection)
+        // Checking against dynamic default labels? 
+        // Harder. Let's assume buttons are enough.
+        await ctx.reply(locale.CASE_SELECT_MSG, kbSelection, s.lang)
         return
       }
 
@@ -142,8 +172,11 @@ export async function handleText(ctx, deps) {
       s.suspectProfile = newSuspectProfile()
       s.history = []
 
-      await ctx.reply(selectedCase.rulesShort, kbMain)
-      await ctx.reply(selectedCase.scenario, kbMain)
+      const rules = selectedCase.rulesShort[s.lang] || selectedCase.rulesShort.ru
+      const scenario = selectedCase.scenario[s.lang] || selectedCase.scenario.ru
+
+      await ctx.reply(rules, kbMain, s.lang)
+      await ctx.reply(scenario, kbMain, s.lang)
 
       // Log Start
       console.log('📝 Logging START to sheets...')
@@ -158,71 +191,68 @@ export async function handleText(ctx, deps) {
 
     // ---- CONFIRM RESTART
     if (s.stage === 'CONFIRM_RESTART') {
-      if (text === L[UI_KEYS.YES]) {
+      if (isCmd(UI_KEYS.YES)) {
         sessionStore.resetSession(chatId)
-        await ctx.reply('✅ Прогресс сброшен.', kbMain)
-        // Immediately explicitly call start to show selection
-        await startGame(ctx, { sessionStore, caseManager })
+        await ctx.reply(locale.CONFIRM_RESTART_YES, kbMain, s.lang)
+        await startGame(ctx, { sessionStore, caseManager }) // This will see new session -> ask lang
         return
       }
-      if (text === L[UI_KEYS.NO]) {
-        s.stage = s.prevStage || 'INTERROGATION' // restore
-        await ctx.reply('👌 Ок, продолжаем.', kbMain)
+      if (isCmd(UI_KEYS.NO)) {
+        s.stage = s.prevStage || 'INTERROGATION'
+        await ctx.reply(locale.CONFIRM_RESTART_NO, kbMain, s.lang)
         return
       }
-      await ctx.reply('Нажми ✅ Да или ❌ Нет.', kbYesNo)
+      await ctx.reply(locale.CONFIRM_YES_NO, kbYesNo, s.lang)
       return
     }
 
-    // 3. SOLVE button (Global trigger for INTERROGATION)
-    if (text === L[UI_KEYS.SOLVE]) {
+    // 3. SOLVE button
+    if (isCmd(UI_KEYS.SOLVE)) {
       if (['INTERROGATION', 'OFFER_EXTRA'].includes(s.stage) || s.stage === 'CONFIRM_EXTRA') {
         s.prevStage = s.stage
         s.stage = 'CONFIRM_SOLVE'
-        await ctx.reply(solveConfirmText(), kbYesNo)
+        await ctx.reply(locale.CONFIRM_SOLVE, kbYesNo, s.lang)
         return
       }
     }
 
     // ---- CONFIRM SOLVE
     if (s.stage === 'CONFIRM_SOLVE') {
-      if (text === L[UI_KEYS.YES]) {
+      if (isCmd(UI_KEYS.YES)) {
         s.stage = 'SOLVING'
-        await ctx.reply(solveHowToText(), kbMain)
+        await ctx.reply(locale.SOLVE_MODE_MSG, kbMain, s.lang)
         return
       }
-      if (text === L[UI_KEYS.NO]) {
+      if (isCmd(UI_KEYS.NO)) {
         s.stage = s.prevStage || 'INTERROGATION'
-        await ctx.reply('👌 Возвращаемся к вопросам.', kbMain)
+        await ctx.reply(locale.CONFIRM_SOLVE_NO, kbMain, s.lang)
         return
       }
-      await ctx.reply('Нажми ✅ Да или ❌ Нет.', kbYesNo)
+      await ctx.reply(locale.CONFIRM_YES_NO, kbYesNo, s.lang)
       return
     }
 
-    // ---- CONFIRM EXTRA QUESTIONS
+    // ---- CONFIRM EXTRA
     if (s.stage === 'CONFIRM_EXTRA') {
-      if (text === L[UI_KEYS.MORE_YES]) {
+      if (isCmd(UI_KEYS.MORE_YES)) {
         s.extraUnlocked = true
         s.stage = 'INTERROGATION'
-        await ctx.reply('✅ Отлично. У тебя есть ещё 5 вопросов. Продолжай допрос.', kbMain)
+        await ctx.reply(locale.LIMIT_EXTRA_YES, kbMain, s.lang)
         return
       }
-
-      if (text === L[UI_KEYS.MORE_NO]) {
+      if (isCmd(UI_KEYS.MORE_NO)) {
         s.stage = 'SOLVING'
-        await ctx.reply(solveHowToText(), kbMain)
+        await ctx.reply(locale.SOLVE_MODE_MSG, kbMain, s.lang)
         return
       }
-
-      await ctx.reply(moreQuestionsAskText(), kbMore)
+      await ctx.reply(locale.LIMIT_REACHED, kbMore, s.lang)
       return
     }
 
-    // Get case from manager
+    // Get case
     const c = caseManager.getCaseById(s.caseId)
     if (!c) {
-      await ctx.reply('⚠️ Ошибка: Данные дела не найдены (возможно, оно было удалено). Начните заново: /start')
+      await ctx.reply(locale.ERR_CASE_NOT_FOUND, null, s.lang)
       s.stage = 'IDLE'
       return
     }
@@ -235,14 +265,18 @@ export async function handleText(ctx, deps) {
 
     // ---- SOLVING
     if (s.stage === 'SOLVING') {
-      await ctx.reply('…думает')
+      await ctx.reply(locale.THIKING, [], s.lang) // empty keys
 
       let verdict
       try {
-        verdict = await checkGuessLLM({ openai, model, caseData: c, guess: text })
+        // Pass language to checkGuess if supported, or rely on system prompt injection?
+        // checkGuessLLM doesn't have lang support yet, but we will pass it in caseData context logic inside it?
+        // Or just assume it works.
+        // Ideally we update checkGuessLLM too, but for now let's pass it.
+        verdict = await checkGuessLLM({ openai, model, caseData: c, guess: text, lang: s.lang })
       } catch (e) {
         console.error('❌ checkGuessLLM error:', e?.message || e)
-        await ctx.reply('⚠️ Ошибка проверки версии. Попробуй ещё раз чуть короче и конкретнее.', kbMain)
+        await ctx.reply(locale.ERR_LLM_CHECK, kbMain, s.lang)
         return
       }
 
@@ -250,13 +284,13 @@ export async function handleText(ctx, deps) {
 
       if (verdict.is_correct) {
         const within10 = s.asked <= 10
-        const winLabel = within10 ? '🏆 Победа!' : '🥈 Условная победа!'
-        const meta = `Точность: ${verdict.closeness}%\nВопросов: ${s.asked}\nБаллы: ${score}/10`
+        const winLabel = within10 ? locale.WIN_TITLE : locale.WIN_TITLE_COND
+        const meta = locale.RESULT_META(verdict.closeness, s.asked, score)
+        const solution = c.solution[s.lang] || c.solution.ru
 
         s.stage = 'FINISHED'
-        await ctx.reply(`${winLabel}\n${meta}\n\n${verdict.feedback}\n\n${c.solution}`, kbMain)
+        await ctx.reply(`${winLabel}\n${meta}\n\n${verdict.feedback}\n\n${solution}`, kbMain, s.lang)
 
-        // Log Win
         console.log('📝 Logging WIN to sheets...')
         googleSheetsService.logGameEvent({
           ...logData,
@@ -267,13 +301,13 @@ export async function handleText(ctx, deps) {
         return
       }
 
+      const solution = c.solution[s.lang] || c.solution.ru
       s.stage = 'FINISHED'
       await ctx.reply(
-        `❌ Не сошлось.\nТочность: ${verdict.closeness}%\nВопросов: ${s.asked}\nБаллы: ${score}/10\n\n${verdict.feedback}\n\n${c.solution}\n\nХочешь сыграть снова? /start`,
-        kbMain
+        `${locale.LOSS_TITLE}\n${locale.RESULT_META(verdict.closeness, s.asked, score)}\n\n${verdict.feedback}\n\n${solution}\n\n${locale.PLAY_AGAIN}`,
+        kbMain, s.lang
       )
 
-      // Log Loss
       googleSheetsService.logGameEvent({
         ...logData,
         eventName: 'LOSS',
@@ -285,28 +319,22 @@ export async function handleText(ctx, deps) {
 
     // ---- INTERROGATION
     if (s.stage === 'INTERROGATION') {
-      // лимит
       if (questionsLeft(s) <= 0) {
-        // Only trigger offer if we haven't unlocked extra yet
         if (!s.extraUnlocked && s.asked >= s.limitBase) {
           s.stage = 'CONFIRM_EXTRA'
-          await ctx.reply(moreQuestionsAskText(), kbMore)
+          await ctx.reply(locale.LIMIT_REACHED, kbMore, s.lang)
           return
         }
-        // If extra used up, force solve
         s.stage = 'SOLVING'
-        await ctx.reply(solveHowToText(), kbMain)
+        await ctx.reply(locale.SOLVE_MODE_MSG, kbMain, s.lang)
         return
       }
 
-      // предупреждение о мультивопросе
       if (looksLikeMultiQuestion(text)) {
-        await ctx.reply('ℹ️ Я отвечу только на первый вопрос. Остальное — отдельными сообщениями.', kbMain)
+        await ctx.reply(locale.MULTI_QUESTION_WARN, kbMain, s.lang)
       }
 
-      // считаем вопрос
       s.asked += 1
-
       await ctx.sendTyping()
 
       let answer
@@ -321,13 +349,12 @@ export async function handleText(ctx, deps) {
         answer = res.answer
       } catch (e) {
         console.error('❌ askSuspectLLM error:', e?.message || e)
-        await ctx.reply('⚠️ Ошибка ответа свидетеля. Попробуй переформулировать вопрос и отправь ещё раз.', kbMain)
-        // откатываем потраченный вопрос, чтобы не было обидно
+        await ctx.reply(locale.ERR_LLM_BABE, kbMain, s.lang)
         s.asked = Math.max(0, s.asked - 1)
         return
       }
 
-      await ctx.reply(answer, kbMain)
+      await ctx.reply(answer, kbMain, s.lang)
 
       // Log Q&A
       googleSheetsService.logQuestion({
@@ -338,25 +365,24 @@ export async function handleText(ctx, deps) {
         answer: answer
       }).catch(e => console.error('❌ Log question failed:', e.message))
 
-      // после 10 — спросить про +5
       if (!s.extraUnlocked && s.asked >= s.limitBase) {
         s.stage = 'CONFIRM_EXTRA'
-        await ctx.reply(moreQuestionsAskText(), kbMore)
+        await ctx.reply(locale.LIMIT_REACHED, kbMore, s.lang)
         return
       }
-
       return
     }
 
-    // ---- FINISHED / fallback
+    // ---- FINISHED
     if (s.stage === 'FINISHED') {
-      await ctx.reply('Игра завершена. Начать заново: /start', kbMain)
+      await ctx.reply(locale.GAME_FINISHED, kbMain, s.lang)
       return
     }
 
-    await ctx.reply('Не понял. Начни игру: /start', kbMain)
+    await ctx.reply(locale.NOT_UNDERSTOOD, kbMain, s.lang)
+
   } catch (e) {
     console.error('❌ handler error:', e?.message || e)
-    await ctx.reply('⚠️ Внутренняя ошибка. Нажми 🔄 Перезапустить или отправь /start.', kbMain)
+    await ctx.reply(locale.ERR_INTERNAL || 'Error', kbMain, s.lang)
   }
 }

@@ -1,6 +1,6 @@
 import { GameContext } from './context.js'
-import { UI_KEYS, UI_LABELS } from './ui.js'
-
+import { UI_KEYS } from './ui.js'
+import { getLocale } from '../locales.js'
 import { Markup } from 'telegraf'
 
 export class TelegramContext extends GameContext {
@@ -29,8 +29,8 @@ export class TelegramContext extends GameContext {
         return (this.ctx.message?.text || '').trim()
     }
 
-    async reply(text, uiKeys = null) {
-        const extra = uiKeys ? this._buildKeyboard(uiKeys) : undefined
+    async reply(text, uiKeys = null, lang = 'ru') {
+        const extra = uiKeys ? this._buildKeyboard(uiKeys, lang) : undefined
 
         try {
             if (extra) {
@@ -59,19 +59,11 @@ export class TelegramContext extends GameContext {
         }
     }
 
-    _buildKeyboard(uiKeys) {
-        // uiKeys is expected to be a 2D array of UI_KEYS or special objects
-        // But engine might pass abstract names like 'MAIN', 'YESNO'
-        // Let's stick to what engine passed: likely a specific keyboard configuration
-
-        // Actually, to keep engine agnostic, engine should pass logical names like 'MAIN_MENU'
-        // OR engine passes a 2D array of keys: [[UI_KEYS.SOLVE, UI_KEYS.RESTART]]
-
-        // Let's assume engine passes a 2D array of keys for maximum flexibility
-
+    _buildKeyboard(uiKeys, lang) {
+        const locale = getLocale(lang)
         // Map keys to labels
         const buttons = uiKeys.map(row =>
-            row.map(key => UI_LABELS[key] || key) // Fallback to key if no label (e.g. dynamic text)
+            row.map(key => locale[key] || key)
         )
 
         // Determine generic options based on content (heuristic)

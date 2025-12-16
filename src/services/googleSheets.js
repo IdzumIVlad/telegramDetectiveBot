@@ -118,6 +118,28 @@ export class GoogleSheetsService {
     }
 
     /**
+     * Log a specific Q&A interaction
+     */
+    async logQuestion({ userString, userId, caseId, question, answer }) {
+        const SHEET_NAME = 'Questions_Log'
+        const HEADERS = ['Time', 'User', 'ID', 'Case', 'Question', 'Answer']
+
+        await this.ensureSheet(SHEET_NAME, HEADERS)
+
+        const now = new Date().toISOString()
+        const row = [
+            now,
+            userString,
+            userId.toString(),
+            caseId,
+            question,
+            answer
+        ]
+
+        await this.appendRow(SHEET_NAME, row)
+    }
+
+    /**
      * Append a row to the sheet
      * @param {string} range - e.g. "Sheet1!A:A" or just "Sheet1"
      * @param {Array<string|number>} values - Array of values for the row

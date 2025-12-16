@@ -1,5 +1,6 @@
 import { GameContext } from './context.js'
-import { UI_KEYS, UI_LABELS } from './ui.js'
+import { UI_KEYS } from './ui.js'
+import { getLocale } from '../locales.js'
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js'
 
@@ -24,58 +25,28 @@ export class DiscordContext extends GameContext {
     }
 
     get text() {
-        // If it's a message, return content
-        if (this.ctx.content) return this.ctx.content.trim()
-        // If it's an interaction (button click), the 'text' is effectively the label or ID
-        // But engine expects text input for some things.
-        // For buttons, we should ideally map button ID to text if engine relies on text comparison
-        // But engine uses UI_LABELS to check text. 
-        // If we use button customId = UI_KEY, we can map it back to Label?
-
         if (this.ctx.customId) {
-            // It's a button click?
-            // If we set customId as the UI Key (e.g. 'BTN_SOLVE'), 
-            // we can return the Label so engine logic works unchanged (comparing against L[UI_KEYS.SOLVE])
-            // OR engine needs to be smarter.
-
-            // Current Engine Logic: `if (text === L[UI_KEYS.SOLVE])` which is '🕵️ Разгадать'
-
-            const label = UI_LABELS[this.ctx.customId]
-            if (label) return label
-
             return this.ctx.customId
         }
-
-        return ''
+        return this.ctx.content ? this.ctx.content.trim() : ''
     }
 
-    async reply(text, uiKeys = null) {
-        // Truncate text if too long for Discord (2000 chars)
-        // Basic safeguard
+    async reply(text, uiKeys = null, lang = 'ru') {
         const safeText = text.slice(0, 1999)
-
         const payload = { content: safeText }
 
         if (uiKeys && uiKeys.length > 0) {
-            payload.components = this._buildComponents(uiKeys)
+            payload.components = this._buildComponents(uiKeys, lang)
         } else {
-            // Remove components if previously there? No, new message.
             payload.components = []
         }
 
         try {
-            // If interaction (button click), we must reply (or update)
-            // If we are in the middle of a flow, 'reply' usually means sending a NEW message in response
-            // Engine logic tends to send multiple messages: `await ctx.reply(...)` multiple times
-
             if (this.ctx.replied || this.ctx.deferred) {
-                // If already replied to this interaction, use followUp
                 await this.ctx.followUp(payload)
             } else if (this.isInteraction) {
-                // First reply to interaction
                 await this.ctx.reply(payload)
             } else {
-                // Regular message event
                 await this.ctx.channel.send(payload)
             }
         } catch (e) {
@@ -91,19 +62,16 @@ export class DiscordContext extends GameContext {
         } catch { }
     }
 
-    _buildComponents(uiKeys) {
-        // uiKeys is 2D array of keys
-        // Discord allows max 5 components per ActionRow, max 5 ActionRows.
-        // We map each row to an ActionRowBuilder
-
+    _buildComponents(uiKeys, lang) {
+        const locale = getLocale(lang)
         return uiKeys.map(row => {
             const actionRow = new ActionRowBuilder()
             row.forEach(key => {
-                const label = UI_LABELS[key] || key
+                const label = locale[key] || key
                 const style = this._getButtonStyle(key)
 
                 const btn = new ButtonBuilder()
-                    .setCustomId(key) // Use key as ID (e.g. 'BTN_SOLVE')
+                    .setCustomId(key)
                     .setLabel(label)
                     .setStyle(style)
 
