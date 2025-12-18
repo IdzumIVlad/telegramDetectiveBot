@@ -97,9 +97,9 @@ export class GoogleSheetsService {
    * @param {number} [params.score] - Score 0-10 (optional for START)
    * @param {number} [params.questionsAsked] - Number of questions (optional for START)
    */
-    async logGameEvent({ eventName, userString, userId, caseId, score = '', questionsAsked = '' }) {
+    async logGameEvent({ eventName, userString, userId, caseId, score = '', questionsAsked = '', language = '', questionsList = '', finalGuess = '' }) {
         const SHEET_NAME = 'GameLogs'
-        const HEADERS = ['Time', 'User', 'ID', 'Case', 'Event', 'Score', 'Questions']
+        const HEADERS = ['Time', 'User', 'ID', 'Case', 'Event', 'Score', 'Questions', 'Language', 'Questions List', 'Final Version']
 
         await this.ensureSheet(SHEET_NAME, HEADERS)
 
@@ -111,7 +111,10 @@ export class GoogleSheetsService {
             caseId,
             eventName,
             score,
-            questionsAsked
+            questionsAsked,
+            language,
+            questionsList,
+            finalGuess
         ]
 
         await this.appendRow(SHEET_NAME, row)

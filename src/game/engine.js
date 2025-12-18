@@ -291,12 +291,17 @@ export async function handleText(ctx, deps) {
         s.stage = 'FINISHED'
         await ctx.reply(`${winLabel}\n${meta}\n\n${verdict.feedback}\n\n${solution}`, kbMain, s.lang)
 
+        const questionsList = s.history.map((h, i) => `${i + 1}. Q: ${h.q}\nA: ${h.a}`).join('\n\n')
+
         console.log('📝 Logging WIN to sheets...')
         googleSheetsService.logGameEvent({
           ...logData,
           eventName: 'WIN',
           score,
-          questionsAsked: s.asked
+          questionsAsked: s.asked,
+          language: s.lang,
+          questionsList,
+          finalGuess: text
         })
         return
       }
@@ -312,7 +317,10 @@ export async function handleText(ctx, deps) {
         ...logData,
         eventName: 'LOSS',
         score,
-        questionsAsked: s.asked
+        questionsAsked: s.asked,
+        language: s.lang,
+        questionsList: s.history.map((h, i) => `${i + 1}. Q: ${h.q}\nA: ${h.a}`).join('\n\n'),
+        finalGuess: text
       })
       return
     }
