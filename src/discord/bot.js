@@ -79,8 +79,16 @@ export const initDiscord = async (token, deps) => {
                         try {
                             const existingThread = await interaction.channel.threads.fetch(existingThreadId)
                             if (existingThread && !existingThread.archived && !existingThread.locked) {
+                                // User has an active thread. Check if they are in it.
+                                // If they left, add them back.
+                                try {
+                                    await existingThread.members.add(userId)
+                                } catch (e) {
+                                    // Ignore if already member or error
+                                }
+
                                 await interaction.reply({
-                                    content: `❌ You already have an open case: <#${existingThreadId}>. Please finish it first!`,
+                                    content: `🔄 You already have an open case. I've added you back: <#${existingThreadId}>`,
                                     ephemeral: true
                                 })
                                 return
