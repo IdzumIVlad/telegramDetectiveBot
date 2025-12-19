@@ -83,8 +83,16 @@ export const initDiscord = async (token, deps) => {
                                 // If they left, add them back.
                                 try {
                                     await existingThread.members.add(userId)
+                                    await existingThread.send(`🔄 Detective <@${userId}> returned to the investigation.`)
                                 } catch (e) {
-                                    // Ignore if already member or error
+                                    console.error('Failed to add user back to thread:', e)
+                                    // If we can't add them, maybe we should let them start a new one?
+                                    // Or tell them permission error.
+                                    await interaction.reply({
+                                        content: `⚠️ Found active case <#${existingThreadId}> but failed to add you back: ${e.message}`,
+                                        ephemeral: true
+                                    })
+                                    return
                                 }
 
                                 await interaction.reply({
@@ -95,7 +103,9 @@ export const initDiscord = async (token, deps) => {
                             }
                             // If archived or not found, proceed (cleanup map)
                             activeUserThreads.delete(userId)
+                            console.log(`Thread ${existingThreadId} not found/archived, cleaning up for user ${userId}`)
                         } catch (e) {
+                            console.error('Error fetching existing thread:', e)
                             // If fetch fails (deleted), proceed
                             activeUserThreads.delete(userId)
                         }
