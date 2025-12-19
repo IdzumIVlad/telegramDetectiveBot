@@ -4,6 +4,9 @@ import { DiscordContext } from '../game/platform/discord.js'
 export const initDiscord = async (token, deps) => {
     const { handleText, startGame } = deps
 
+    // Track active threads per user to prevent spam: Map<userId, threadId>
+    const activeUserThreads = new Map()
+
     const client = new Client({
         intents: [
             GatewayIntentBits.Guilds,
@@ -68,6 +71,28 @@ export const initDiscord = async (token, deps) => {
             // 1. LOBBY START
             if (interaction.customId === 'START_GAME_LOBBY') {
                 try {
+                    const userId = interaction.user.id
+
+                    // Check if user already has an active thread
+                    if (activeUserThreads.has(userId)) {
+                        const existingThreadId = activeUserThreads.get(userId)
+                        try {
+                            const existingThread = await interaction.channel.threads.fetch(existingThreadId)
+                            if (existingThread && !existingThread.archived && !existingThread.locked) {
+                                await interaction.reply({
+                                    content: `❌ You already have an open case: <#${existingThreadId}>. Please finish it first!`,
+                                    ephemeral: true
+                                })
+                                return
+                            }
+                            // If archived or not found, proceed (cleanup map)
+                            activeUserThreads.delete(userId)
+                        } catch (e) {
+                            // If fetch fails (deleted), proceed
+                            activeUserThreads.delete(userId)
+                        }
+                    }
+
                     const { ChannelType } = await import('discord.js')
 
                     // Create private thread
@@ -84,6 +109,9 @@ export const initDiscord = async (token, deps) => {
 
                     // Add user to thread
                     await thread.members.add(interaction.user.id)
+
+                    // Track this new thread
+                    activeUserThreads.set(interaction.user.id, thread.id)
 
                     // Reply ephemerally to button click
                     await interaction.reply({
