@@ -33,6 +33,12 @@ export const initDiscord = async (token, deps) => {
                 return // Ignore non-admins
             }
 
+            // 1. Channel check: Only allowed in 'start-demo-game'
+            if (message.channel.name !== 'start-demo-game') {
+                // Silently ignore command in wrong channels
+                return
+            }
+
             const row = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
@@ -70,6 +76,16 @@ export const initDiscord = async (token, deps) => {
 
             // 1. LOBBY START
             if (interaction.customId === 'START_GAME_LOBBY') {
+
+                // Channel check
+                if (interaction.channel.name !== 'start-demo-game') {
+                    await interaction.reply({
+                        content: '⚠️ Games can only be started from the #start-demo-game channel.',
+                        ephemeral: true
+                    })
+                    return
+                }
+
                 try {
                     const userId = interaction.user.id
 
